@@ -19,6 +19,18 @@ Cordis Context
 
 > 这是独立的教学实现，不是 `deepseek-ai/deepseek-harness` 的精简发行版。
 
+## 代码阅读顺序
+
+核心实现集中在 [`src/nano-deepseek-harness.ts`](./src/nano-deepseek-harness.ts)，文件按下面的顺序分成五段：
+
+1. `Tool / Model / AgentLoop`：插件之间的最小协议；
+2. `NanoRuntime`：只保存能力的 Cordis Service；
+3. `deepSeekPlugin`：OpenAI SDK 与 DeepSeek 的适配层；
+4. `agentLoopPlugin`：Tool Call 循环与消息回填；
+5. `readFilePlugin`：工作区文件工具与路径边界。
+
+命令行入口在 [`src/cli.ts`](./src/cli.ts)，它只负责组装插件、提交任务和释放 Context。
+
 ## 运行
 
 要求 Node.js 22 或更高版本。

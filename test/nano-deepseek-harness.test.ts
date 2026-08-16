@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -67,20 +67,25 @@ test('Cordis composes the model, tool, and loop plugins', async () => {
 
 test('the file plugin is confined and follows the Cordis lifecycle', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'nanodsh-'))
+  const outside = await mkdtemp(join(tmpdir(), 'nanodsh-outside-'))
   const ctx = new Context()
   try {
     await writeFile(join(workspace, 'proof.txt'), 'proof', 'utf8')
+    await writeFile(join(outside, 'secret.txt'), 'secret', 'utf8')
+    await symlink(join(outside, 'secret.txt'), join(workspace, 'link.txt'))
     await ctx.plugin(NanoRuntime)
     const fiber = await ctx.plugin(readFilePlugin(workspace))
     const tool = ctx.nano.findTool('read_file')
     assert.ok(tool)
     assert.equal(await tool.execute({ path: 'proof.txt' }), 'proof')
     await assert.rejects(tool.execute({ path: '../secret.txt' }), /escapes the workspace/)
+    await assert.rejects(tool.execute({ path: 'link.txt' }), /escapes the workspace/)
     await fiber.dispose()
     assert.equal(ctx.nano.findTool('read_file'), undefined)
   } finally {
     await ctx.fiber.dispose()
     await rm(workspace, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
   }
 })
 
