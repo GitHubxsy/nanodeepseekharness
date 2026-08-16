@@ -1,0 +1,26 @@
+{
+  "name": "nanodeepseekharness",
+  "version": "0.1.0",
+  "description": "A dependency-free runtime, teaching-sized DeepSeek agent harness in TypeScript.",
+  "type": "module",
+  "main": "dist/src/nano-deepseek-harness.js",
+  "bin": {
+    "nanodsh": "dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/src/cli.js",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^6.0.0"
+  },
+  "license": "MIT"
+}
