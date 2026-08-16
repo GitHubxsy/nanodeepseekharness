@@ -11,8 +11,8 @@ try {
   // 组装顺序也就是推荐阅读顺序：内核 → 模型 → 工具 → 循环。
   await ctx.plugin(NanoRuntime)
   await ctx.plugin(deepSeekPlugin())
-  await ctx.plugin(readFilePlugin())
-  await ctx.plugin(agentLoopPlugin())
+  await ctx.plugin(readFilePlugin)
+  await ctx.plugin(agentLoopPlugin)
 
   // CLI 自己不理解 Tool Call，它只把任务交给 ctx.nano。
   process.stdout.write(`${await ctx.nano.run(task)}\n`)

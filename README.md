@@ -23,11 +23,11 @@ Cordis Context
 
 核心实现集中在 [`src/nano-deepseek-harness.ts`](./src/nano-deepseek-harness.ts)，文件按下面的顺序分成五段：
 
-1. `Tool / Model / AgentLoop`：插件之间的最小协议；
+1. `Tool / Model`：插件之间的最小协议；
 2. `NanoRuntime`：只保存能力的 Cordis Service；
 3. `deepSeekPlugin`：OpenAI SDK 与 DeepSeek 的适配层；
 4. `agentLoopPlugin`：Tool Call 循环与消息回填；
-5. `readFilePlugin`：工作区文件工具与路径边界。
+5. `readFilePlugin`：一个普通文件读取函数。
 
 命令行入口在 [`src/cli.ts`](./src/cli.ts)，它只负责组装插件、提交任务和释放 Context。
 
@@ -54,8 +54,8 @@ const ctx = new Context()
 
 await ctx.plugin(NanoRuntime)
 await ctx.plugin(deepSeekPlugin())
-await ctx.plugin(readFilePlugin())
-await ctx.plugin(agentLoopPlugin())
+await ctx.plugin(readFilePlugin)
+await ctx.plugin(agentLoopPlugin)
 
 console.log(await ctx.nano.run('读取 README.md'))
 await ctx.fiber.dispose()
@@ -70,7 +70,7 @@ await ctx.fiber.dispose()
 4. Model Plugin 根据新上下文继续回答
 ```
 
-`read_file` 只能访问启动目录以内的真实文件，普通 `../` 和符号链接逃逸都会被拒绝。插件卸载时，它注册的能力也会随 Cordis 生命周期撤销。
+为了保持最小，示例没有加入沙箱、权限确认、持久化和并发调度；`read_file` 会直接读取模型给出的路径。插件卸载时，它注册的能力会随 Cordis 生命周期撤销。
 
 ## 验证
 
