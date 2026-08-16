@@ -1,21 +1,25 @@
 # nanoDeepSeekHarness
 
-一个不依赖 DeepSeek Harness、Cordis 或 OpenAI SDK 的最小 Agent Harness。
+一个不依赖 `deepseek-ai/deepseek-harness` 的最小 Agent Harness。
 
-运行时只有 Node.js 原生能力：
+它只使用两个基础依赖：
+
+- **Cordis**：Context、插件加载、依赖注入和生命周期；
+- **OpenAI SDK**：调用 DeepSeek 的 OpenAI 兼容接口。
 
 ```text
-NanoHarness
-├── deepSeekPlugin   模型插件：调用 DeepSeek /chat/completions
-├── readFilePlugin   工具插件：注册 read_file
-└── agentLoopPlugin  循环插件：模型 → 工具 → 结果 → 模型
+Cordis Context
+├── NanoRuntime       最小能力注册表
+├── deepSeekPlugin    模型插件
+├── readFilePlugin    工具插件
+└── agentLoopPlugin   循环插件
 ```
 
-核心观点仍然是“一切皆插件”：`NanoHarness` 只负责组合，模型、工具和 Agent Loop 都由插件提供。
+核心仍然只负责组合，模型、工具和 Agent Loop 都是 Cordis Plugin。
 
 > 这是独立的教学实现，不是 `deepseek-ai/deepseek-harness` 的精简发行版。
 
-## 最小运行
+## 运行
 
 要求 Node.js 22 或更高版本。
 
@@ -34,12 +38,15 @@ DEEPSEEK_MODEL='deepseek-v4-pro' npm run dev -- '你好'
 ## 最小代码
 
 ```ts
-const harness = new NanoHarness()
-  .use(deepSeekPlugin())
-  .use(readFilePlugin())
-  .use(agentLoopPlugin())
+const ctx = new Context()
 
-console.log(await harness.run('读取 README.md'))
+await ctx.plugin(NanoRuntime)
+await ctx.plugin(deepSeekPlugin())
+await ctx.plugin(readFilePlugin())
+await ctx.plugin(agentLoopPlugin())
+
+console.log(await ctx.nano.run('读取 README.md'))
+await ctx.fiber.dispose()
 ```
 
 一次完整循环只有四步：
@@ -47,11 +54,11 @@ console.log(await harness.run('读取 README.md'))
 ```text
 1. Model Plugin 返回 tool_calls
 2. Agent Loop 找到 Tool Plugin
-3. Tool 执行结果作为 tool message 写回上下文
+3. Tool 结果作为 tool message 写回上下文
 4. Model Plugin 根据新上下文继续回答
 ```
 
-`read_file` 只能访问启动目录以内的文件，`../` 路径逃逸会被拒绝。
+`read_file` 只能访问启动目录以内的真实文件，普通 `../` 和符号链接逃逸都会被拒绝。插件卸载时，它注册的能力也会随 Cordis 生命周期撤销。
 
 ## 验证
 
@@ -61,8 +68,10 @@ npm test
 npm run build
 ```
 
-## 官方 API
+## 参考
 
+- [Cordis](https://github.com/cordiverse/cordis)
+- [OpenAI Node SDK](https://github.com/openai/openai-node)
 - [DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion)
 - [DeepSeek Tool Calls](https://api-docs.deepseek.com/guides/tool_calls)
 

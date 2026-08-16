@@ -3,17 +3,18 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import { Context, type Plugin as CordisPlugin } from 'cordis'
+import OpenAI from 'openai'
 import {
   agentLoopPlugin,
   deepSeekPlugin,
-  definePlugin,
-  NanoHarness,
+  NanoRuntime,
   readFilePlugin,
-  type Message,
   type Model,
 } from '../src/nano-deepseek-harness.js'
 
-test('the loop executes a plugin tool and returns the final model text', async () => {
+test('Cordis composes the model, tool, and loop plugins', async () => {
+  const ctx = new Context()
   let request = 0
   const model: Model = {
     async complete(messages, tools) {
@@ -21,69 +22,94 @@ test('the loop executes a plugin tool and returns the final model text', async (
       assert.equal(tools[0]?.function.name, 'echo')
       if (request === 1) {
         return {
-          role: 'assistant',
           content: null,
-          tool_calls: [{
-            id: 'call-1',
-            type: 'function',
-            function: { name: 'echo', arguments: '{"text":"hello"}' },
-          }],
+          toolCalls: [{ id: 'call-1', name: 'echo', arguments: '{"text":"hello"}' }],
         }
       }
-      const result = messages.at(-1)
-      assert.deepEqual(result, { role: 'tool', tool_call_id: 'call-1', content: 'HELLO' })
-      return { role: 'assistant', content: 'done' }
+      assert.deepEqual(messages.at(-1), { role: 'tool', tool_call_id: 'call-1', content: 'HELLO' })
+      return { content: 'done', toolCalls: [] }
+    },
+  }
+  const fakeModel: CordisPlugin.Object<void> = {
+    name: 'fake-model',
+    inject: ['nano'],
+    apply(active) {
+      active.effect(() => active.nano.provideModel(model))
+    },
+  }
+  const echoTool: CordisPlugin.Object<void> = {
+    name: 'echo-tool',
+    inject: ['nano'],
+    apply(active) {
+      active.effect(() => active.nano.registerTool({
+        definition: {
+          type: 'function',
+          function: { name: 'echo', description: 'Echo text.', parameters: { type: 'object' } },
+        },
+        async execute(args) {
+          return String(args['text']).toUpperCase()
+        },
+      }))
     },
   }
 
-  const harness = new NanoHarness()
-    .use(definePlugin('fake-model', active => active.provideModel(model)))
-    .use(definePlugin('echo-tool', active => active.registerTool({
-      definition: {
-        type: 'function',
-        function: { name: 'echo', description: 'Echo text.', parameters: { type: 'object' } },
-      },
-      async execute(args) {
-        return String(args['text']).toUpperCase()
-      },
-    })))
-    .use(agentLoopPlugin())
-
-  assert.equal(await harness.run('echo hello'), 'done')
-  assert.equal(request, 2)
+  try {
+    await ctx.plugin(NanoRuntime)
+    await ctx.plugin(fakeModel)
+    await ctx.plugin(echoTool)
+    await ctx.plugin(agentLoopPlugin())
+    assert.equal(await ctx.nano.run('echo hello'), 'done')
+    assert.equal(request, 2)
+  } finally {
+    await ctx.fiber.dispose()
+  }
 })
 
-test('the read-file plugin reads inside the workspace and blocks traversal', async () => {
+test('the file plugin is confined and follows the Cordis lifecycle', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'nanodsh-'))
+  const ctx = new Context()
   try {
     await writeFile(join(workspace, 'proof.txt'), 'proof', 'utf8')
-    const harness = new NanoHarness().use(readFilePlugin(workspace))
-    const tool = harness.findTool('read_file')
+    await ctx.plugin(NanoRuntime)
+    const fiber = await ctx.plugin(readFilePlugin(workspace))
+    const tool = ctx.nano.findTool('read_file')
     assert.ok(tool)
     assert.equal(await tool.execute({ path: 'proof.txt' }), 'proof')
     await assert.rejects(tool.execute({ path: '../secret.txt' }), /escapes the workspace/)
+    await fiber.dispose()
+    assert.equal(ctx.nano.findTool('read_file'), undefined)
   } finally {
+    await ctx.fiber.dispose()
     await rm(workspace, { recursive: true, force: true })
   }
 })
 
-test('the DeepSeek plugin sends the official chat-completions tool format', async () => {
+test('the OpenAI SDK sends DeepSeek chat-completions tool requests', async () => {
   let sent: JsonBody | undefined
-  interface JsonBody { model?: unknown; messages?: unknown; tools?: unknown; thinking?: unknown }
+  interface JsonBody { model?: unknown; messages?: unknown; tools?: unknown }
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     assert.equal(String(input), 'https://api.deepseek.com/chat/completions')
     sent = JSON.parse(String(init?.body)) as JsonBody
     return new Response(JSON.stringify({
-      choices: [{ message: { role: 'assistant', content: 'ok' } }],
+      id: 'chat-test',
+      object: 'chat.completion',
+      created: 0,
+      model: 'deepseek-v4-flash',
+      choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: 'ok' } }],
     }), { status: 200, headers: { 'content-type': 'application/json' } })
   }) as typeof fetch
+  const client = new OpenAI({ apiKey: 'test-key', baseURL: 'https://api.deepseek.com', fetch: fetchImpl })
+  const ctx = new Context()
 
-  const harness = new NanoHarness()
-    .use(deepSeekPlugin({ apiKey: 'test-key', fetchImpl }))
-    .use(agentLoopPlugin())
-  assert.equal(await harness.run('hello'), 'ok')
-  assert.equal(sent?.model, 'deepseek-v4-flash')
-  assert.deepEqual(sent?.thinking, { type: 'disabled' })
-  assert.ok(Array.isArray(sent?.messages))
-  assert.ok(Array.isArray(sent?.tools))
+  try {
+    await ctx.plugin(NanoRuntime)
+    await ctx.plugin(deepSeekPlugin({ client }))
+    await ctx.plugin(agentLoopPlugin())
+    assert.equal(await ctx.nano.run('hello'), 'ok')
+    assert.equal(sent?.model, 'deepseek-v4-flash')
+    assert.ok(Array.isArray(sent?.messages))
+    assert.ok(Array.isArray(sent?.tools))
+  } finally {
+    await ctx.fiber.dispose()
+  }
 })

@@ -1,7 +1,7 @@
 {
   "name": "nanodeepseekharness",
   "version": "0.1.0",
-  "description": "A dependency-free runtime, teaching-sized DeepSeek agent harness in TypeScript.",
+  "description": "A teaching-sized DeepSeek agent harness built with Cordis and the OpenAI SDK.",
   "type": "module",
   "main": "dist/src/nano-deepseek-harness.js",
   "bin": {
@@ -22,5 +22,9 @@
     "tsx": "^4.0.0",
     "typescript": "^6.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "cordis": "^4.0.0-rc.8",
+    "openai": "^7.4.0"
+  }
 }
